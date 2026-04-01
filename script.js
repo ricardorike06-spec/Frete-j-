@@ -9,6 +9,7 @@ let isLoggedIn = false;
 let pendingAction = null;
 let mapsLoaded = false;
 let isDriverOnline = false;
+let resetCpf = null;
 
 // Variáveis para armazenar dados de rota
 let routeData = {
@@ -36,6 +37,141 @@ const PRICE_PER_KM_PESADA = 4.0;
 const FUEL_PRICE_PER_LITER = 6.0;
 const AVERAGE_CONSUMPTION_LEVE = 3.5;
 const AVERAGE_CONSUMPTION_PESADA = 2.5;
+
+// ==================== FUNÇÕES DE RECUPERAÇÃO DE SENHA ====================
+
+function showRecoveryMethod(method) {
+    document.querySelectorAll('.recovery-form').forEach(form => form.classList.add('hidden'));
+    
+    if (method === 'whatsapp') {
+        document.getElementById('whatsappRecovery').classList.remove('hidden');
+    } else if (method === 'email') {
+        document.getElementById('emailRecovery').classList.remove('hidden');
+    } else if (method === 'security') {
+        document.getElementById('securityRecovery').classList.remove('hidden');
+    }
+}
+
+function sendRecoveryWhatsapp() {
+    const cpf = document.getElementById('whatsappCpf').value.replace(/\D/g, '');
+    const phone = document.getElementById('whatsappPhone').value.replace(/\D/g, '');
+    
+    const users = JSON.parse(localStorage.getItem('freteja_users')) || [];
+    const user = users.find(u => u.cpf === cpf);
+    
+    if (!user) {
+        showToast('CPF não encontrado');
+        return;
+    }
+    
+    if (user.phone !== phone) {
+        showToast('WhatsApp não corresponde ao cadastro');
+        return;
+    }
+    
+    // Simular envio de código
+    const recoveryCode = Math.floor(100000 + Math.random() * 900000).toString();
+    localStorage.setItem(`recovery_code_${cpf}`, recoveryCode);
+    
+    showToast(`Código enviado para ${formatPhone(phone)}: ${recoveryCode}`);
+    
+    const code = prompt('Digite o código recebido:');
+    if (code === recoveryCode) {
+        resetCpf = cpf;
+        document.getElementById('resetPasswordForm').classList.remove('hidden');
+        document.getElementById('whatsappRecovery').classList.add('hidden');
+        showToast('Código verificado! Digite sua nova senha');
+    } else {
+        showToast('Código inválido');
+    }
+}
+
+function sendRecoveryEmail() {
+    const cpf = document.getElementById('emailCpf').value.replace(/\D/g, '');
+    const email = document.getElementById('recoveryEmail').value;
+    
+    const users = JSON.parse(localStorage.getItem('freteja_users')) || [];
+    const user = users.find(u => u.cpf === cpf);
+    
+    if (!user) {
+        showToast('CPF não encontrado');
+        return;
+    }
+    
+    if (user.email !== email) {
+        showToast('E-mail não corresponde ao cadastro');
+        return;
+    }
+    
+    const recoveryCode = Math.floor(100000 + Math.random() * 900000).toString();
+    localStorage.setItem(`recovery_code_${cpf}`, recoveryCode);
+    
+    showToast(`Código enviado para ${email}: ${recoveryCode}`);
+    
+    const code = prompt('Digite o código recebido:');
+    if (code === recoveryCode) {
+        resetCpf = cpf;
+        document.getElementById('resetPasswordForm').classList.remove('hidden');
+        document.getElementById('emailRecovery').classList.add('hidden');
+        showToast('Código verificado! Digite sua nova senha');
+    } else {
+        showToast('Código inválido');
+    }
+}
+
+function verifySecurityAnswer() {
+    const cpf = document.getElementById('securityCpf').value.replace(/\D/g, '');
+    const answer = document.getElementById('securityAnswer').value;
+    
+    const users = JSON.parse(localStorage.getItem('freteja_users')) || [];
+    const user = users.find(u => u.cpf === cpf);
+    
+    if (!user) {
+        showToast('CPF não encontrado');
+        return;
+    }
+    
+    if (user.securityQuestion !== answer) {
+        showToast('Frase de segurança incorreta');
+        return;
+    }
+    
+    resetCpf = cpf;
+    document.getElementById('resetPasswordForm').classList.remove('hidden');
+    document.getElementById('securityRecovery').classList.add('hidden');
+    showToast('Frase verificada! Digite sua nova senha');
+}
+
+function resetPassword() {
+    const newPassword = document.getElementById('newPassword').value;
+    const confirmPassword = document.getElementById('confirmNewPassword').value;
+    
+    if (newPassword.length < 6) {
+        showToast('A senha deve ter pelo menos 6 caracteres');
+        return;
+    }
+    
+    if (newPassword !== confirmPassword) {
+        showToast('As senhas não coincidem');
+        return;
+    }
+    
+    const users = JSON.parse(localStorage.getItem('freteja_users')) || [];
+    const userIndex = users.findIndex(u => u.cpf === resetCpf);
+    
+    if (userIndex !== -1) {
+        users[userIndex].password = newPassword;
+        localStorage.setItem('freteja_users', JSON.stringify(users));
+        showToast('Senha alterada com sucesso! Faça login com sua nova senha');
+        showPage('loginPage');
+        
+        // Limpar campos
+        document.getElementById('newPassword').value = '';
+        document.getElementById('confirmNewPassword').value = '';
+        document.getElementById('resetPasswordForm').classList.add('hidden');
+        resetCpf = null;
+    }
+}
 
 // ==================== FUNÇÕES DE CAMINHONEIRO ====================
 
@@ -697,6 +833,22 @@ function showPayments() {
         showPage('loginPage');
         return;
     }
+    
+    // Verificar se é modo caminhoneiro para mudar os textos
+    const titleElement = document.getElementById('paymentsModalTitle');
+    const totalPaidLabel = document.getElementById('totalPaidLabel');
+    const pendingLabel = document.getElementById('pendingPaymentsLabel');
+    
+    if (isDriverMode) {
+        titleElement.textContent = 'Meu Saldo';
+        totalPaidLabel.textContent = 'Saldo total';
+        pendingLabel.textContent = 'A depositar';
+    } else {
+        titleElement.textContent = 'Meus Pagamentos';
+        totalPaidLabel.textContent = 'Total pago';
+        pendingLabel.textContent = 'Pagamentos pendentes';
+    }
+    
     renderPaymentsList();
     document.getElementById('paymentsModal').style.display = 'flex';
 }
@@ -720,7 +872,7 @@ function renderPaymentsList() {
         container.innerHTML = `
             <div class="empty-history">
                 <i class="fas fa-wallet" style="font-size: 48px; color: #ccc; margin-bottom: 15px;"></i>
-                <p>Nenhum pagamento registrado</p>
+                <p>Nenhum ${isDriverMode ? 'depósito' : 'pagamento'} registrado</p>
             </div>
         `;
         return;
@@ -734,7 +886,7 @@ function renderPaymentsList() {
                 <div class="history-date">${new Date(item.date).toLocaleDateString('pt-BR')}</div>
                 <span class="payment-method-badge payment-method-${item.paymentMethod === 'PIX' ? 'pix' : item.paymentMethod === 'Dinheiro' ? 'money' : 'card'}">
                     <i class="fas ${item.paymentMethod === 'PIX' ? 'fa-qrcode' : item.paymentMethod === 'Dinheiro' ? 'fa-money-bill-wave' : 'fa-credit-card'}"></i>
-                    ${item.paymentMethod || 'Pendente'}
+                    ${item.paymentMethod || (isDriverMode ? 'Aguardando depósito' : 'Pendente')}
                 </span>
             </div>
             <div class="payment-amount">${formatCurrency(item.price)}</div>
@@ -1078,8 +1230,8 @@ function initMaps() {
     const imediatoMapElement = document.getElementById('imediatoMap');
     if (imediatoMapElement && !imediatoMap) {
         imediatoMap = new google.maps.Map(imediatoMapElement, {
-            center: { lat: -23.5505, lng: -46.6333 },
-            zoom: 10,
+            center: { lat: -15.8231, lng: -48.1065 }, // Centro de Ceilândia
+            zoom: 12,
             styles: [{ featureType: "poi", elementType: "labels", stylers: [{ visibility: "off" }] }]
         });
         imediatoDirectionsRenderer = new google.maps.DirectionsRenderer({
@@ -1091,8 +1243,8 @@ function initMaps() {
     const orcamentoMapElement = document.getElementById('orcamentoMap');
     if (orcamentoMapElement && !orcamentoMap) {
         orcamentoMap = new google.maps.Map(orcamentoMapElement, {
-            center: { lat: -23.5505, lng: -46.6333 },
-            zoom: 10,
+            center: { lat: -15.8231, lng: -48.1065 },
+            zoom: 12,
             styles: [{ featureType: "poi", elementType: "labels", stylers: [{ visibility: "off" }] }]
         });
         orcamentoDirectionsRenderer = new google.maps.DirectionsRenderer({
@@ -1286,6 +1438,7 @@ function handleRegister(e) {
     const cpf = document.getElementById('registerCpf').value.replace(/\D/g, '');
     const email = document.getElementById('registerEmail').value.trim();
     const phone = document.getElementById('registerPhone').value.replace(/\D/g, '');
+    const securityQuestion = document.getElementById('registerSecurityQuestion').value.trim();
     const password = document.getElementById('registerPassword').value;
     const confirmPassword = document.getElementById('registerConfirmPassword').value;
     
@@ -1307,6 +1460,10 @@ function handleRegister(e) {
     }
     if (phone.length < 10 || phone.length > 11) {
         document.getElementById('registerPhoneError').style.display = 'block';
+        isValid = false;
+    }
+    if (!securityQuestion) {
+        document.getElementById('registerSecurityError').style.display = 'block';
         isValid = false;
     }
     if (password.length < 6) {
@@ -1331,7 +1488,7 @@ function handleRegister(e) {
             return;
         }
         
-        const newUser = { name, cpf, email, phone, password, createdAt: new Date().toISOString() };
+        const newUser = { name, cpf, email, phone, securityQuestion, password, createdAt: new Date().toISOString() };
         users.push(newUser);
         localStorage.setItem('freteja_users', JSON.stringify(users));
         
@@ -1368,7 +1525,7 @@ function showPage(pageId) {
     document.querySelectorAll('.page').forEach(page => page.classList.remove('active'));
     document.getElementById(pageId).classList.add('active');
     
-    if (pageId === 'homePage' || pageId === 'loginPage' || pageId === 'registerPage' || pageId === 'driverPanelPage') {
+    if (pageId === 'homePage' || pageId === 'loginPage' || pageId === 'registerPage' || pageId === 'driverPanelPage' || pageId === 'forgotPasswordPage') {
         document.getElementById('backButton').style.display = 'none';
     } else {
         document.getElementById('backButton').style.display = 'flex';
@@ -1541,7 +1698,8 @@ function setupAuthEventListeners() {
     document.getElementById('registerForm').addEventListener('submit', handleRegister);
     document.getElementById('showRegister').addEventListener('click', () => showPage('registerPage'));
     document.getElementById('showLogin').addEventListener('click', () => showPage('loginPage'));
-    document.getElementById('forgotPassword').addEventListener('click', () => showToast('Recuperação de senha em desenvolvimento'));
+    document.getElementById('forgotPassword').addEventListener('click', () => showPage('forgotPasswordPage'));
+    document.getElementById('backToLogin').addEventListener('click', () => showPage('loginPage'));
     document.getElementById('loginCpf').addEventListener('input', e => e.target.value = formatCPF(e.target.value));
     document.getElementById('registerCpf').addEventListener('input', e => e.target.value = formatCPF(e.target.value));
     document.getElementById('registerPhone').addEventListener('input', e => e.target.value = formatPhone(e.target.value));
